@@ -162,6 +162,19 @@ def convert_package(package, output, pdf, entry, language, testset, revision):
                 item, content = contents.pop(description)
                 item.filename = description.replace("/secret/", "/sample/")
                 contents[item.filename] = item, content
+        # Each Java jury solution needs its own directory: otherwise multiple
+        # Main.java files in the same verdict group would overwrite each other.
+        for filename in list(contents):
+            if not filename.startswith("submissions/") or not filename.endswith(".java"):
+                continue
+            path = PurePosixPath(filename)
+            destination = str(path.parent / path.stem / "Main.java")
+            if destination in contents:
+                raise ValueError("Java jury solution destination collision")
+            item, content = contents.pop(filename)
+            if item is not None:
+                item.filename = destination
+            contents[destination] = item, content
         metadata = yaml.safe_load(contents["problem.yaml"][1])
         name = problem.find(f"names/name[@language='{language}']")
         if name is None or not name.get("value"):
@@ -366,6 +379,8 @@ def _upload_bundle(client, settings, run):
             warnings = messages.get("warning", [])
             if isinstance(warnings, list) and any("must associate team with your user" in str(value) for value in warnings):
                 print("  Jury solutions were not submitted: associate the upload account with a team in DOMjudge.", flush=True)
+                print("  Teams: create a jury test team and add it to the target contest; Users: select that team for the upload account.", flush=True)
+                print("  Keep the admin role. Activate the contest (it need not start), check judgehosts, then upload again.", flush=True)
             if counts["warning"] or counts["danger"]:
                 print("  Inspect the jury interface for import warnings.", flush=True)
         elif messages:
@@ -382,4 +397,5 @@ def _upload_bundle(client, settings, run):
     if manifest["complete"] and set(actual) != wanted_ids:
         raise DOMjudgeError("DOMjudge contest still contains problems absent from Polygon")
     print("DOMjudge sync complete: " + ", ".join(desired), flush=True)
+    print("Upload complete does not confirm judging: check Submissions and Judging Verifier for expected verdicts.", flush=True)
     return receipt

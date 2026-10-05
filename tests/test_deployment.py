@@ -136,6 +136,30 @@ class DeploymentTests(unittest.TestCase):
             self.assertTrue(converted.replace(b'\r\n', b'\n').startswith(source))
             self.assertIn(b'@EXPECTED_RESULTS@', converted)
 
+    def test_java_jury_sources_have_separate_main_filenames(self):
+        package = self.run / 'java-polygon.zip'
+        java_sources = {
+            'solutions/first.java': b'public class Main { public static void main(String[] args) {} }',
+            'solutions/second.java': b'class Main { public static void main(String[] args) {} }',
+        }
+        with zipfile.ZipFile(io.BytesIO(polygon_zip())) as original, zipfile.ZipFile(package, 'w') as archive:
+            for name in original.namelist():
+                content = original.read(name)
+                if name == 'problem.xml':
+                    content = content.replace(b'</solutions>', b'<solution tag="main"><source path="solutions/first.java" type="java.11"/></solution><solution tag="main"><source path="solutions/second.java" type="java.11"/></solution></solutions>')
+                archive.writestr(name, content)
+            for name, content in java_sources.items():
+                archive.writestr(name, content)
+        pdf = self.run / 'A.pdf'
+        pdf.write_bytes(b'%PDF Java')
+        output = self.run / 'A.zip'
+        counts = convert_package(package, output, pdf, {'letter': 'A', 'problemId': 42, 'slug': 'parking-fee-system'}, 'korean', 'tests', 7)
+        with zipfile.ZipFile(output) as archive:
+            for stem in ('first', 'second'):
+                self.assertEqual(archive.read(f'submissions/accepted/{stem}/Main.java'), java_sources[f'solutions/{stem}.java'])
+            self.assertIn('submissions/accepted/main.cpp', archive.namelist())
+        self.assertEqual(counts['solutionCount'], 3)
+
     def test_pipeline_stages_all_results_before_upload_and_preserves_latest_on_failure(self):
         output = self.output / "bundle"
         client = PackagePolygon()
